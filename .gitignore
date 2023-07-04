@@ -50,3 +50,11 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Local Executables
+s1
+s2
+s3
+s4
+tst
+main
