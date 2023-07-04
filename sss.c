@@ -23,7 +23,7 @@
  * Edited comments follow: (Unedited comments can be found in test/main.c)
  *
  * shsecret.c - Secret sharing algorithm
- * Written by David Madore <david.madore@ens.fr>
+ * Written by David Madore
  * 2000/06/19 - Public Domain
  * http://www.madore.org/~david/programs/#prog_shsecret
  * ftp://ftp.madore.org/pub/madore/misc/shsecret.c
