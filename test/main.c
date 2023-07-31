@@ -21,7 +21,7 @@
 /* David Madore's original comments follow: (Note: the Makefile creates "main" not "shsecret") */
 
 /* shsecret.c - Secret sharing algorithm */
-/* Written by David Madore
+/* Written by David Madore */
 /* 2000/06/19 - Public Domain */
 /* http://www.madore.org/~david/programs/#prog_shsecret */
 /* ftp://ftp.madore.org/pub/madore/misc/shsecret.c */
