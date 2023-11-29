@@ -209,6 +209,8 @@ main(
       close(p);
       ++in;
     } else if (argv[k][l] == '+') {
+      if (!ln)
+        error("Specify inputs before outputs.");
       if (on >= 256)
         error("Too many output points.");
       if (!(v = realloc(op, (on + 1) * sizeof (*op))))
