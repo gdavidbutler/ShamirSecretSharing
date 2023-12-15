@@ -199,8 +199,8 @@ main(
       s = lseek(p, 0, SEEK_END);
       if (!ln)
         ln = s;
-      else if (ln != s)
-        error("not the same len.");
+      else if (ln > s)
+        error("an input file is too small.");
       if (!(*(iv + in) = malloc(ln)))
         error("malloc.");
       lseek(p, 0, SEEK_SET);
@@ -210,7 +210,7 @@ main(
       ++in;
     } else if (argv[k][l] == '+') {
       if (!ln)
-        error("Specify inputs before outputs.");
+        error("Specify an input before outputs.");
       if (on >= 256)
         error("Too many output points.");
       if (!(v = realloc(op, (on + 1) * sizeof (*op))))
