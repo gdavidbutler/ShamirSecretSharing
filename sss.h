@@ -18,6 +18,9 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#ifndef __SSS_H__
+#define __SSS_H__
+
 /* all buffers of values are the same length */
 /* to create N values with a M value threshold of some reference value */
 /*   input point 0 is the reference value */
@@ -36,3 +39,5 @@ sss(
  ,unsigned int on /* number of op and ov */
  ,unsigned int ln /* length of each value buffer */
 );
+
+#endif /* __SSS_H__ */
