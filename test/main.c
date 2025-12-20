@@ -171,21 +171,23 @@ main(
   /* Read command line arguments */
   for (k = 1; k < (unsigned int)argc; ++k) {
     void *v;
-    unsigned int s;
-    int l;
-    int p;
+    unsigned int p;
+    unsigned int l;
 
     p = 0;
     for (l = 0; argv[k][l] >= '0' && argv[k][l] <= '9'; ++l) {
       p = p * 10 + (argv[k][l] - '0');
-      if (p >= 256)
+      if (p > 255)
         error("Point value too large.");
     }
     if (argv[k][l] == '-') {
-      unsigned int m;
+      unsigned int s;
+      int f;
 
-      for (m = 0; m < in; ++m)
-        if (*(ip + m) == p)
+      if (in > 255)
+        error("Too many input points.");
+      for (s = 0; s < in; ++s)
+        if (*(ip + s) == p)
           error("Duplicate input point.");
       if (!(v = realloc(ip, (in + 1) * sizeof (*ip))))
         error("realloc.");
@@ -194,24 +196,24 @@ main(
       if (!(v = realloc(iv, (in + 1) * sizeof (*iv))))
         error("realloc.");
       iv = v;
-      if ((p = open(argv[k] + l + 1, O_RDONLY)) < 0)
+      if ((f = open(argv[k] + l + 1, O_RDONLY)) < 0)
         error("Failed to open input file.");
-      s = lseek(p, 0, SEEK_END);
+      s = lseek(f, 0, SEEK_END);
       if (!ln)
         ln = s;
       else if (ln > s)
         error("an input file is too small.");
       if (!(*(iv + in) = malloc(ln)))
         error("malloc.");
-      lseek(p, 0, SEEK_SET);
-      if (read(p, *(iv + in), ln) != ln)
+      lseek(f, 0, SEEK_SET);
+      if (read(f, *(iv + in), ln) != ln)
         error("read.");
-      close(p);
+      close(f);
       ++in;
     } else if (argv[k][l] == '+') {
       if (!ln)
         error("Specify an input before outputs.");
-      if (on >= 256)
+      if (on > 255)
         error("Too many output points.");
       if (!(v = realloc(op, (on + 1) * sizeof (*op))))
         error("realloc.");

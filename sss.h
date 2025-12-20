@@ -23,12 +23,20 @@
 
 /* all buffers of values are the same length */
 /* to create N values with a M value threshold of some reference value */
-/*   input point 0 is the reference value */
-/*   input point(s) 1 to 255 (M - 1) (cryptographically random) values */
-/*   output point(s) 1 to 255 (N) values */
+/*   input point X is the reference value */
+/*   input point(s) 0 to 255 (except X) (M - 1) (cryptographically random) values */
+/*   output point(s) 0 to 255 (N) values */
 /* to recover the reference value from M values */
-/*   input point(s) 1 to 255 (M) values */
-/*   output point 0 is the recovered reference value */
+/*   input point(s) 0 to 255 (except X) (M) values */
+/*   output point X is the recovered reference value */
+/* preconditions: */
+/*   ip, op, iv and ov must not be null */
+/*   all points in ip must be unique */
+/*   all pointers in iv and ov must be valid */
+/*   input and output value buffers must not overlap */
+/*   in and on have to be less than, or equal to, 256 */
+/*   each value buffer must be at least ln bytes */
+/* caller responsible for clearing sensitive data from buffers */
 void
 sss(
   unsigned char *ip /* input points */

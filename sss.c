@@ -4598,8 +4598,6 @@ sss(
   fillCmt(Cmt);
   fillCit(Cmt, Cit);
 #endif
-  if (!ip || !op || !iv || !ov)
-    return;
   /* do crosses */
   for (i = 0; i < in; ++i) {
     n = 1;
