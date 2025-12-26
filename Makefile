@@ -13,7 +13,11 @@ main: test/main.c sss.h sss.o
 
 check: main
 	./main 0-COPYING 1-test/r1 2-test/r2 3+s1 4+s2 5+s3 6+s4
-	./main 3-s1 4-s2 5-s3 6-s4 0+tst
+	./main 1-test/r1 2-test/r2 3-s1 4-s2 5-s3 6-s4 0+tst
+	cmp COPYING tst
+	./main 1-test/r1 2-test/r2 3-s1 0+tst
+	cmp COPYING tst
+	./main 2-test/r2 3-s1 6-s4 0+tst
 	cmp COPYING tst
 	./main 3-s1 4-s2 5-s3 0+tst
 	cmp COPYING tst
