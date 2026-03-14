@@ -1,15 +1,21 @@
 CFLAGS = -I. -Os -g
 
-all: sss.o main
+all: sss.o main sssMkTest
 
 clean:
-	rm -f sss.o main s1 s2 s3 s4 tst
+	rm -f sss.o sssMk.o main sssMkTest s1 s2 s3 s4 tst
 
 sss.o: sss.c sss.h
 	$(CC) $(CFLAGS) -c sss.c
 
+sssMk.o: sssMk.c sssMk.h
+	$(CC) $(CFLAGS) -c sssMk.c
+
 main: test/main.c sss.h sss.o
 	$(CC) $(CFLAGS) -o main test/main.c sss.o
+
+sssMkTest: test/sssMkTest.c sss.h sssMk.h sss.o sssMk.o ../rmd128/rmd128.o
+	$(CC) $(CFLAGS) -I../rmd128 -o sssMkTest test/sssMkTest.c sss.o sssMk.o ../rmd128/rmd128.o
 
 check: main
 	./main 0-COPYING 1-test/r1 2-test/r2 3+s1 4+s2 5+s3 6+s4
