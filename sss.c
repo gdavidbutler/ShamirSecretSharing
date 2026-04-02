@@ -4589,10 +4589,12 @@ sss(
 #endif
   unsigned char ic[256]; /* cross product of points in-in (xi-xj) */
   unsigned char oc[256]; /* cross product of points out-in (zi-xj) */
+  unsigned char cf[256]; /* precomputed Lagrange coefficients */
   unsigned int i;
   unsigned int j;
   unsigned int k;
   unsigned char n;
+  unsigned char pi;
 
 #if !CON_TABLES
   fillCmt(Cmt);
@@ -4600,30 +4602,37 @@ sss(
 #endif
   /* do crosses */
   for (i = 0; i < in; ++i) {
+    pi = *(ip + i);
     n = 1;
     for (j = 0; j < in; ++j)
       if (j != i)
-        n = Cmt[n][*(ip + i) ^ *(ip + j)];
+        n = Cmt[n][pi ^ *(ip + j)];
     ic[i] = n;
   }
   for (i = 0; i < on; ++i) {
+    pi = *(op + i);
     n = 1;
     for (j = 0; j < in; ++j)
-      n = Cmt[n][*(op + i) ^ *(ip + j)];
+      n = Cmt[n][pi ^ *(ip + j)];
     oc[i] = n;
   }
   /* do outputs */
-  for (k = 0; k < ln; ++k) {
-    for (i = 0; i < on; ++i) {
-      n = 0;
-      if (!oc[i]) {
+  for (i = 0; i < on; ++i) {
+    if (!oc[i]) {
+      for (j = 0; j < in; ++j)
+        if (*(op + i) == *(ip + j))
+          break;
+      for (k = 0; k < ln; ++k)
+        *(*(ov + i) + k) = *(*(iv + j) + k);
+    } else {
+      for (j = 0; j < in; ++j)
+        cf[j] = Cmt[oc[i]][Cit[Cmt[ic[j]][*(op + i) ^ *(ip + j)]]];
+      for (k = 0; k < ln; ++k) {
+        n = 0;
         for (j = 0; j < in; ++j)
-          if (*(op + i) == *(ip + j))
-            n = *(*(iv + j) + k);
-      } else
-        for (j = 0; j < in; ++j)
-          n ^= Cmt[*(*(iv + j) + k)][Cmt[oc[i]][Cit[Cmt[ic[j]][*(op + i) ^ *(ip + j)]]]];
-      *(*(ov + i) + k) = n;
+          n ^= Cmt[*(*(iv + j) + k)][cf[j]];
+        *(*(ov + i) + k) = n;
+      }
     }
   }
 }

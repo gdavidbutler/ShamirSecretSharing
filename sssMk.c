@@ -93,6 +93,8 @@ sssMkHash(
   unsigned int b;
   unsigned int i;
   unsigned int j;
+  unsigned char *np;
+  unsigned char *cp;
 
   if (!h || !s || !l || n < 1 || n > 256 || !w
    || !h->a || !h->i || !h->u || !h->f)
@@ -103,22 +105,28 @@ sssMkHash(
     return (0);
 
   /* hash real share leaves */
+  np = w + p * b;
   for (i = 0; i < n; ++i) {
     h->i(c);
     h->u(c, s[i], l);
-    h->f(c, w + (p + i) * b);
+    h->f(c, np);
+    np += b;
   }
 
   /* zero padding leaves */
   for (i = n; i < p; ++i)
     for (j = 0; j < b; ++j)
-      *(w + (p + i) * b + j) = 0;
+      *np++ = 0;
 
   /* build tree bottom-up: tree[i] = hash(tree[2i] || tree[2i+1]) */
+  np = w + (p - 1) * b;
+  cp = np + (p - 1) * b;
   for (i = p - 1; i > 0; --i) {
     h->i(c);
-    h->u(c, w + (i << 1) * b, b << 1);
-    h->f(c, w + i * b);
+    h->u(c, cp, b << 1);
+    h->f(c, np);
+    np -= b;
+    cp -= b << 1;
   }
 
   if (h->d)
@@ -138,6 +146,7 @@ sssMkProof(
   unsigned int b;
   unsigned int node;
   unsigned int j;
+  const unsigned char *sp;
 
   if (!h || n < 1 || n > 256 || i >= n || !w || !p)
     return (0);
@@ -147,8 +156,9 @@ sssMkProof(
 
   /* walk from leaf to root, copying sibling hashes */
   while (node > 1) {
+    sp = w + (node ^ 1) * b;
     for (j = 0; j < b; ++j)
-      *p++ = *(w + (node ^ 1) * b + j);
+      *p++ = sp[j];
     node >>= 1;
   }
   return (p);
@@ -171,6 +181,8 @@ sssMkExtract(
   unsigned int j;
   unsigned char *cur;
   unsigned char *cmb;
+  const unsigned char *lo;
+  const unsigned char *hi;
 
   if (!h || !s || !l || n < 1 || n > 256 || i >= n || !p || !w
    || !h->a || !h->i || !h->u || !h->f)
@@ -192,18 +204,14 @@ sssMkExtract(
   node = pw + i;
   while (node > 1) {
     if (node & 1) {
-      /* right child: sibling is left */
-      for (j = 0; j < b; ++j)
-        cmb[j] = p[j];
-      for (j = 0; j < b; ++j)
-        cmb[b + j] = cur[j];
+      lo = p; hi = cur;   /* right child: sibling is left */
     } else {
-      /* left child: sibling is right */
-      for (j = 0; j < b; ++j)
-        cmb[j] = cur[j];
-      for (j = 0; j < b; ++j)
-        cmb[b + j] = p[j];
+      lo = cur; hi = p;   /* left child: sibling is right */
     }
+    for (j = 0; j < b; ++j)
+      cmb[j] = lo[j];
+    for (j = 0; j < b; ++j)
+      cmb[b + j] = hi[j];
     p += b;
     h->i(c);
     h->u(c, cmb, b << 1);
