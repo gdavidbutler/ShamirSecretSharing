@@ -24,12 +24,194 @@
 #include "sss.h"
 #include "sssMk.h"
 #include "rmd128.h"
+#include "sha256.h"
 
 static void *
-hashAllocate(
+rmd128Allocate(
   void
 ){
   return (malloc(rmd128tsize()));
+}
+
+static void *
+sha256Allocate(
+  void
+){
+  return (malloc(sha256tsize()));
+}
+
+/* Parametric test over (hash vtable, share count).
+ * Builds a tree of n synthetic shares, verifies every share, then runs
+ * four negative tests: bit-flip corruption, wrong-index substitution,
+ * wrong-n substitution (larger), wrong-n substitution (smaller when valid).
+ * Returns 0 on success, non-zero on any failure. */
+static int
+parametricTest(
+  const sssMkHsh_t *h
+ ,const char *hashName
+ ,unsigned int n
+){
+  enum { ShareLen = 64 };
+  unsigned int b;
+  unsigned int waSz;
+  unsigned int pfSz;
+  unsigned int i;
+  unsigned int j;
+  unsigned char **shares;
+  const unsigned char **cShares;
+  unsigned char **proofs;
+  unsigned char *work;
+  unsigned char *root;
+  unsigned char *savedRoot;
+  unsigned char *vWork;
+  unsigned char *extracted;
+  int fail;
+
+  fail = 0;
+  b = 1U << h->h;
+  waSz = sssMkWaSz(h->h, n);
+  pfSz = sssMkPfSz(h->h, n);
+  printf("\n== %s n=%u b=%u waSz=%u pfSz=%u ==\n",
+   hashName, n, b, waSz, pfSz);
+
+  /* allocate share buffers with distinct content per share.
+   * content is arbitrary; the Merkle tree treats shares as opaque bytes. */
+  shares = malloc(n * sizeof (*shares));
+  cShares = malloc(n * sizeof (*cShares));
+  proofs = malloc(n * sizeof (*proofs));
+  work = malloc(waSz ? waSz : 1);
+  vWork = malloc(sssMkVfSz(h->h));
+  savedRoot = malloc(b);
+  if (!shares || !cShares || !proofs || !work || !vWork || !savedRoot) {
+    fprintf(stderr, "malloc\n");
+    exit(1);
+  }
+  for (i = 0; i < n; ++i) {
+    shares[i] = malloc(ShareLen);
+    /* allocate at least one byte so the library's null-pointer guard
+     * does not trip on the degenerate pfSz=0 case (n=1) */
+    proofs[i] = malloc(pfSz ? pfSz : 1);
+    if (!shares[i] || !proofs[i]) {
+      fprintf(stderr, "malloc\n");
+      exit(1);
+    }
+    for (j = 0; j < ShareLen; ++j)
+      shares[i][j] = (unsigned char)((i * 37 + j) & 0xff);
+    cShares[i] = shares[i];
+  }
+
+  /* build tree */
+  root = sssMkHash(h, cShares, ShareLen, n, work);
+  if (!root) {
+    printf("  sssMkHash: FAIL\n");
+    fail = 1;
+    goto cleanup;
+  }
+  memcpy(savedRoot, root, b);
+
+  /* extract and verify every share */
+  for (i = 0; i < n; ++i) {
+    if (!sssMkProof(h, n, i, work, proofs[i])) {
+      printf("  sssMkProof[%u]: FAIL\n", i);
+      fail = 1;
+      goto cleanup;
+    }
+    extracted = sssMkExtract(h, cShares[i], ShareLen, i, n, proofs[i], vWork);
+    if (!extracted || memcmp(extracted, savedRoot, b) != 0) {
+      printf("  verify[%u]: FAIL\n", i);
+      fail = 1;
+      goto cleanup;
+    }
+  }
+  printf("  verify all %u shares: PASS\n", n);
+
+  /* negative: bit-flip corruption */
+  shares[0][0] ^= 0xff;
+  extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n, proofs[0], vWork);
+  if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+    printf("  corruption rejection: FAIL (accepted corrupted share)\n");
+    fail = 1;
+  } else
+    printf("  corruption rejection: PASS\n");
+  shares[0][0] ^= 0xff;
+
+  /* negative: wrong index (only meaningful when n > 1) */
+  if (n > 1) {
+    extracted = sssMkExtract(h, cShares[0], ShareLen, 1, n, proofs[0], vWork);
+    if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+      printf("  wrong-index rejection: FAIL\n");
+      fail = 1;
+    } else
+      printf("  wrong-index rejection: PASS\n");
+  }
+
+  /* negative: wrong n (larger). the verifier thinks tree has n+1 shares;
+   * the recomputed root must differ because n is bound at the root. */
+  if (n < 256) {
+    extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n + 1, proofs[0], vWork);
+    if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+      printf("  wrong-n(+1) rejection: FAIL\n");
+      fail = 1;
+    } else
+      printf("  wrong-n(+1) rejection: PASS\n");
+  }
+
+  /* negative: wrong n (smaller, same padded size). important case:
+   * without n-binding, n=3 and n=4 would produce identical walks for i<3. */
+  if (n > 1) {
+    extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n - 1, proofs[0], vWork);
+    if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+      printf("  wrong-n(-1) rejection: FAIL\n");
+      fail = 1;
+    } else
+      printf("  wrong-n(-1) rejection: PASS\n");
+  }
+
+  /* null-argument guards */
+  if (sssMkHash(0, cShares, ShareLen, n, work)
+   || sssMkHash(h, 0, ShareLen, n, work)
+   || sssMkHash(h, cShares, 0, n, work)
+   || sssMkHash(h, cShares, ShareLen, 0, work)
+   || sssMkHash(h, cShares, ShareLen, 257, work)
+   || sssMkHash(h, cShares, ShareLen, n, 0)) {
+    printf("  Hash null-arg guards: FAIL\n");
+    fail = 1;
+  }
+  if (sssMkProof(0, n, 0, work, proofs[0])
+   || sssMkProof(h, 0, 0, work, proofs[0])
+   || sssMkProof(h, 257, 0, work, proofs[0])
+   || sssMkProof(h, n, n, work, proofs[0])
+   || sssMkProof(h, n, 0, 0, proofs[0])
+   || sssMkProof(h, n, 0, work, 0)) {
+    printf("  Proof null-arg guards: FAIL\n");
+    fail = 1;
+  }
+  if (sssMkExtract(0, shares[0], ShareLen, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, 0, ShareLen, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, shares[0], 0, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, shares[0], ShareLen, n, n, proofs[0], vWork)
+   || sssMkExtract(h, shares[0], ShareLen, 0, 0, proofs[0], vWork)
+   || sssMkExtract(h, shares[0], ShareLen, 0, 257, proofs[0], vWork)
+   || sssMkExtract(h, shares[0], ShareLen, 0, n, 0, vWork)
+   || sssMkExtract(h, shares[0], ShareLen, 0, n, proofs[0], 0)) {
+    printf("  Extract null-arg guards: FAIL\n");
+    fail = 1;
+  }
+  if (!fail)
+    printf("  argument guards: PASS\n");
+
+cleanup:
+  for (i = 0; i < n; ++i) {
+    free(shares[i]);
+    free(proofs[i]);
+  }
+  free(shares);
+  free(cShares);
+  free(proofs);
+  free(work);
+  free(vWork);
+  free(savedRoot);
+  return (fail);
 }
 
 int
@@ -41,7 +223,8 @@ main(
     " Shamir secret sharing."
     " The quick brown fox jumps over the lazy dog.";
   enum { M = 3, N = 4 };
-  sssMkHsh_t Hsh;
+  sssMkHsh_t Hrmd;
+  sssMkHsh_t Hsha;
   unsigned int secretLen;
   unsigned int pfSz;
   unsigned int waSz;
@@ -58,24 +241,34 @@ main(
   unsigned int j;
   int fail;
   FILE *f;
+  unsigned int nTests[] = { 1, 2, 3, 5, 7, 8, 100, 255, 256 };
 
   fail = 0;
   secretLen = sizeof (Secret) - 1;
 
-  /* hash context: rmd128 (2^4 = 16 bytes) */
-  Hsh.a = hashAllocate;
-  Hsh.i = (void(*)(void *))rmd128init;
-  Hsh.u = (void(*)(void *, const unsigned char *, unsigned int))rmd128update;
-  Hsh.f = (void(*)(void *, unsigned char *))rmd128final;
-  Hsh.d = free;
-  Hsh.h = 4;
+  /* rmd128 (2^4 = 16 bytes) */
+  Hrmd.a = rmd128Allocate;
+  Hrmd.i = (void(*)(void *))rmd128init;
+  Hrmd.u = (void(*)(void *, const unsigned char *, unsigned int))rmd128update;
+  Hrmd.f = (void(*)(void *, unsigned char *))rmd128final;
+  Hrmd.d = free;
+  Hrmd.h = 4;
+
+  /* sha256 (2^5 = 32 bytes) */
+  Hsha.a = sha256Allocate;
+  Hsha.i = (void(*)(void *))sha256init;
+  Hsha.u = (void(*)(void *, const unsigned char *, unsigned int))sha256update;
+  Hsha.f = (void(*)(void *, unsigned char *))sha256final;
+  Hsha.d = free;
+  Hsha.h = 5;
 
   printf("Secret (%u bytes): %.*s\n", secretLen, (int)secretLen, Secret);
 
   /*
-   * Step 1: Create shares (M=3 threshold, N=4 shares)
+   * Test 1: narrative integration (SSS + Merkle, M=3, N=4, rmd128)
    */
-  printf("\nStep 1: Create shares (M=%u N=%u)\n", (unsigned)M, (unsigned)N);
+  printf("\nTest 1: SSS+Merkle integration (M=%u N=%u, rmd128)\n",
+   (unsigned)M, (unsigned)N);
 
   /* secret at point 0 */
   ip[0] = 0;
@@ -149,34 +342,24 @@ main(
     printf("\n");
   }
 
-  /*
-   * Step 2: Build Merkle tree
-   */
-  printf("\nStep 2: Merkle tree (n=%u)\n", (unsigned)N);
-  waSz = sssMkWaSz(Hsh.h, N);
-  pfSz = sssMkPfSz(Hsh.h, N);
-  printf("  Work area: %u bytes, proof size: %u bytes\n", waSz, pfSz);
-
+  waSz = sssMkWaSz(Hrmd.h, N);
+  pfSz = sssMkPfSz(Hrmd.h, N);
   mkWork = malloc(waSz);
   if (!mkWork) {
     fprintf(stderr, "malloc\n");
     return (1);
   }
-  root = sssMkHash(&Hsh, cov, secretLen, N, mkWork);
+  root = sssMkHash(&Hrmd, cov, secretLen, N, mkWork);
   if (!root) {
     fprintf(stderr, "sssMkHash\n");
     return (1);
   }
   printf("  Root:");
-  for (i = 0; i < (1U << Hsh.h); ++i)
+  for (i = 0; i < (1U << Hrmd.h); ++i)
     printf(" %02x", root[i]);
   printf("\n");
 
-  /*
-   * Step 3: Extract proofs and verify all shares
-   */
-  printf("\nStep 3: Verify all shares\n");
-  vfWork = malloc(sssMkVfSz(Hsh.h));
+  vfWork = malloc(sssMkVfSz(Hrmd.h));
   if (!vfWork) {
     fprintf(stderr, "malloc\n");
     return (1);
@@ -189,81 +372,31 @@ main(
       fprintf(stderr, "malloc\n");
       return (1);
     }
-    if (!sssMkProof(&Hsh, N, i, mkWork, proofBuf[i])) {
+    if (!sssMkProof(&Hrmd, N, i, mkWork, proofBuf[i])) {
       fprintf(stderr, "sssMkProof %u\n", i);
       return (1);
     }
-    extracted = sssMkExtract(&Hsh, cov[i], secretLen, i, N,
+    extracted = sssMkExtract(&Hrmd, cov[i], secretLen, i, N,
      proofBuf[i], vfWork);
     if (!extracted
-     || memcmp(extracted, root, 1U << Hsh.h) != 0) {
-      printf("  share %u: FAIL\n", i);
+     || memcmp(extracted, root, 1U << Hrmd.h) != 0) {
+      printf("  share %u verify: FAIL\n", i);
       fail = 1;
     } else
-      printf("  share %u: PASS\n", i);
+      printf("  share %u verify: PASS\n", i);
   }
 
-  /*
-   * Step 4: Corruption detection
-   */
-  printf("\nStep 4: Corruption detection\n");
-  {
-    unsigned char *extracted;
-
-    ov[0][0] ^= 0xff;
-    extracted = sssMkExtract(&Hsh, cov[0], secretLen, 0, N,
-     proofBuf[0], vfWork);
-    if (!extracted
-     || memcmp(extracted, root, 1U << Hsh.h) != 0)
-      printf("  Corrupted share: FAIL (expected)\n");
-    else {
-      printf("  Corrupted share: PASS (unexpected!)\n");
-      fail = 1;
-    }
-    ov[0][0] ^= 0xff; /* restore */
-
-    extracted = sssMkExtract(&Hsh, cov[0], secretLen, 1, N,
-     proofBuf[0], vfWork);
-    if (!extracted
-     || memcmp(extracted, root, 1U << Hsh.h) != 0)
-      printf("  Wrong index: FAIL (expected)\n");
-    else {
-      printf("  Wrong index: PASS (unexpected!)\n");
-      fail = 1;
-    }
-  }
-
-  /*
-   * Step 5: Recover secret from M shares (using shares 0, 2, 3)
-   */
-  printf("\nStep 5: Recover secret (using shares 0, 2, 3)\n");
+  /* recover secret from shares 0, 2, 3 (at points 3, 5, 6) */
   {
     unsigned char rip[M];
     unsigned char rop[1];
     unsigned char *riv[M];
     unsigned char *rov[1];
 
-    /* verify received shares */
-    for (i = 0; i < M; ++i) {
-      unsigned char *extracted;
-      unsigned int si;
-
-      si = (i == 0) ? 0 : (i == 1) ? 2 : 3;
-      extracted = sssMkExtract(&Hsh, cov[si], secretLen, si, N,
-       proofBuf[si], vfWork);
-      if (!extracted
-       || memcmp(extracted, root, 1U << Hsh.h) != 0) {
-        printf("  Verify share %u: FAIL\n", si);
-        return (1);
-      }
-    }
-    printf("  All received shares verified\n");
-
-    /* shares 0, 2, 3 are at points 3, 5, 6 */
     rip[0] = op[0]; riv[0] = ov[0];
     rip[1] = op[2]; riv[1] = ov[2];
     rip[2] = op[3]; riv[2] = ov[3];
-    rop[0] = ip[0]; /* secret point */
+    rop[0] = ip[0];
     rov[0] = malloc(secretLen);
     if (!rov[0]) {
       fprintf(stderr, "malloc\n");
@@ -271,19 +404,18 @@ main(
     }
 
     sss(rip, rop, riv, rov, M, 1, secretLen);
-    printf("  SSS recover: OK\n");
 
     if (memcmp(rov[0], Secret, secretLen) == 0)
-      printf("  Secret match: PASS\n");
+      printf("  recovered secret: PASS\n");
     else {
-      printf("  Secret match: FAIL\n");
+      printf("  recovered secret: FAIL\n");
       fail = 1;
     }
 
     free(rov[0]);
   }
 
-  /* cleanup */
+  /* cleanup narrative test */
   for (i = 0; i < N; ++i)
     free(proofBuf[i]);
   free(vfWork);
@@ -292,6 +424,17 @@ main(
     free(ov[i]);
   for (i = 0; i < M; ++i)
     free(iv[i]);
+
+  /*
+   * Test 2: parametric coverage (n edge cases, two hash sizes)
+   */
+  printf("\nTest 2: parametric coverage");
+  for (i = 0; i < sizeof (nTests) / sizeof (nTests[0]); ++i) {
+    if (parametricTest(&Hrmd, "rmd128", nTests[i]))
+      fail = 1;
+    if (parametricTest(&Hsha, "sha256", nTests[i]))
+      fail = 1;
+  }
 
   printf("\nAll tests completed%s.\n", fail ? " with FAILURES" : "");
   return (fail);

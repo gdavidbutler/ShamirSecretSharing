@@ -37,12 +37,17 @@
 /*   in and on have to be less than, or equal to, 256 */
 /*   each value buffer must be at least ln bytes */
 /* caller responsible for clearing sensitive data from buffers */
+/* Side-channel note: the implementation uses data-dependent lookups into */
+/* a 64 KB multiplication table. Memory access patterns leak secret bytes */
+/* through cache timing to any observer co-resident on the CPU (SMT */
+/* sibling, same-host VM). Callers securing a high-value secret from such */
+/* an adversary should isolate this code (dedicated core, no co-tenants). */
 void
 sss(
-  unsigned char *ip /* input points */
- ,unsigned char *op /* output points */
- ,unsigned char **iv /* input value buffers */
- ,unsigned char **ov /* output value buffers */
+  const unsigned char *ip /* input points */
+ ,const unsigned char *op /* output points */
+ ,unsigned char *const *iv /* input value buffers */
+ ,unsigned char *const *ov /* output value buffers */
  ,unsigned int in /* number of ip and iv */
  ,unsigned int on /* number of op and ov */
  ,unsigned int ln /* length of each value buffer */

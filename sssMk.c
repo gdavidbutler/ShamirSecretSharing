@@ -20,6 +20,15 @@
 
 #include "sssMk.h"
 
+/* Domain separation tags: distinguish leaf, internal-node and root hash
+ * inputs. Prefixing rules out leaf/node/root confusion from second-preimage
+ * attacks. The root hash additionally commits to the share count n so
+ * proofs cannot be replayed between trees of different sizes that share
+ * the same padded-tree structure. */
+static const unsigned char LeafTag = 0x00;
+static const unsigned char NodeTag = 0x01;
+static const unsigned char RootTag = 0x02;
+
 /* next power of 2 >= n, for n in 1..256 */
 static unsigned int
 nextPow2(
@@ -76,8 +85,8 @@ unsigned int
 sssMkVfSz(
   unsigned char h
 ){
-  /* current hash (2^h) + combined buffer (2^(h+1)) */
-  return (3U << h);
+  /* current hash (2^h) */
+  return (1U << h);
 }
 
 unsigned char *
@@ -95,6 +104,7 @@ sssMkHash(
   unsigned int j;
   unsigned char *np;
   unsigned char *cp;
+  unsigned char nb[2];
 
   if (!h || !s || !l || n < 1 || n > 256 || !w
    || !h->a || !h->i || !h->u || !h->f)
@@ -104,34 +114,45 @@ sssMkHash(
   if (!(c = h->a()))
     return (0);
 
-  /* hash real share leaves */
+  /* hash real share leaves with LeafTag prefix */
   np = w + p * b;
   for (i = 0; i < n; ++i) {
     h->i(c);
+    h->u(c, &LeafTag, 1);
     h->u(c, s[i], l);
     h->f(c, np);
     np += b;
   }
 
-  /* zero padding leaves */
+  /* zero padding leaves (never addressable via Extract: i >= n is rejected) */
   for (i = n; i < p; ++i)
     for (j = 0; j < b; ++j)
       *np++ = 0;
 
-  /* build tree bottom-up: tree[i] = hash(tree[2i] || tree[2i+1]) */
+  /* build tree bottom-up: tree[i] = H(NodeTag || tree[2i] || tree[2i+1]) */
   np = w + (p - 1) * b;
   cp = np + (p - 1) * b;
   for (i = p - 1; i > 0; --i) {
     h->i(c);
+    h->u(c, &NodeTag, 1);
     h->u(c, cp, b << 1);
     h->f(c, np);
     np -= b;
     cp -= b << 1;
   }
 
+  /* bind n to root: slot 0 = H(RootTag || n_hi || n_lo || tree[1]) */
+  nb[0] = (unsigned char)(n >> 8);
+  nb[1] = (unsigned char)(n & 0xff);
+  h->i(c);
+  h->u(c, &RootTag, 1);
+  h->u(c, nb, 2);
+  h->u(c, w + b, b);
+  h->f(c, w);
+
   if (h->d)
     h->d(c);
-  return (w + b); /* tree[1] = root */
+  return (w); /* bound root at slot 0 */
 }
 
 unsigned char *
@@ -140,7 +161,7 @@ sssMkProof(
  ,unsigned int n
  ,unsigned int i
  ,const unsigned char *w
- ,unsigned char *p
+ ,unsigned char *pf
 ){
   unsigned int pw;
   unsigned int b;
@@ -148,7 +169,7 @@ sssMkProof(
   unsigned int j;
   const unsigned char *sp;
 
-  if (!h || n < 1 || n > 256 || i >= n || !w || !p)
+  if (!h || n < 1 || n > 256 || i >= n || !w || !pf)
     return (0);
   b = 1U << h->h;
   pw = nextPow2(n);
@@ -158,10 +179,10 @@ sssMkProof(
   while (node > 1) {
     sp = w + (node ^ 1) * b;
     for (j = 0; j < b; ++j)
-      *p++ = sp[j];
+      *pf++ = sp[j];
     node >>= 1;
   }
-  return (p);
+  return (pf);
 }
 
 unsigned char *
@@ -171,32 +192,31 @@ sssMkExtract(
  ,unsigned int l
  ,unsigned int i
  ,unsigned int n
- ,const unsigned char *p
+ ,const unsigned char *pf
  ,unsigned char *w
 ){
   void *c;
   unsigned int pw;
   unsigned int b;
   unsigned int node;
-  unsigned int j;
   unsigned char *cur;
-  unsigned char *cmb;
   const unsigned char *lo;
   const unsigned char *hi;
+  unsigned char nb[2];
 
-  if (!h || !s || !l || n < 1 || n > 256 || i >= n || !p || !w
+  if (!h || !s || !l || n < 1 || n > 256 || i >= n || !pf || !w
    || !h->a || !h->i || !h->u || !h->f)
     return (0);
   b = 1U << h->h;
   pw = nextPow2(n);
   cur = w;
-  cmb = w + b;
 
   if (!(c = h->a()))
     return (0);
 
-  /* hash share data to get leaf hash */
+  /* hash share data with LeafTag to get leaf hash */
   h->i(c);
+  h->u(c, &LeafTag, 1);
   h->u(c, s, l);
   h->f(c, cur);
 
@@ -204,20 +224,27 @@ sssMkExtract(
   node = pw + i;
   while (node > 1) {
     if (node & 1) {
-      lo = p; hi = cur;   /* right child: sibling is left */
+      lo = pf; hi = cur;  /* right child: sibling is left */
     } else {
-      lo = cur; hi = p;   /* left child: sibling is right */
+      lo = cur; hi = pf;  /* left child: sibling is right */
     }
-    for (j = 0; j < b; ++j)
-      cmb[j] = lo[j];
-    for (j = 0; j < b; ++j)
-      cmb[b + j] = hi[j];
-    p += b;
+    pf += b;
     h->i(c);
-    h->u(c, cmb, b << 1);
+    h->u(c, &NodeTag, 1);
+    h->u(c, lo, b);
+    h->u(c, hi, b);
     h->f(c, cur);
     node >>= 1;
   }
+
+  /* bind n: cur = H(RootTag || n_hi || n_lo || inner_root) */
+  nb[0] = (unsigned char)(n >> 8);
+  nb[1] = (unsigned char)(n & 0xff);
+  h->i(c);
+  h->u(c, &RootTag, 1);
+  h->u(c, nb, 2);
+  h->u(c, cur, b);
+  h->f(c, cur);
 
   if (h->d)
     h->d(c);

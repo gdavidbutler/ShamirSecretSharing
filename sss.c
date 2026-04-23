@@ -4575,10 +4575,10 @@ fillCit(
 
 void
 sss(
-  unsigned char *ip
- ,unsigned char *op
- ,unsigned char **iv
- ,unsigned char **ov
+  const unsigned char *ip
+ ,const unsigned char *op
+ ,unsigned char *const *iv
+ ,unsigned char *const *ov
  ,unsigned int in
  ,unsigned int on
  ,unsigned int ln
@@ -4618,20 +4618,29 @@ sss(
   }
   /* do outputs */
   for (i = 0; i < on; ++i) {
+    unsigned char *ovi = *(ov + i);
     if (!oc[i]) {
+      const unsigned char *ivj;
+
       for (j = 0; j < in; ++j)
         if (*(op + i) == *(ip + j))
           break;
+      ivj = *(iv + j);
       for (k = 0; k < ln; ++k)
-        *(*(ov + i) + k) = *(*(iv + j) + k);
+        ovi[k] = ivj[k];
     } else {
       for (j = 0; j < in; ++j)
         cf[j] = Cmt[oc[i]][Cit[Cmt[ic[j]][*(op + i) ^ *(ip + j)]]];
-      for (k = 0; k < ln; ++k) {
-        n = 0;
-        for (j = 0; j < in; ++j)
-          n ^= Cmt[*(*(iv + j) + k)][cf[j]];
-        *(*(ov + i) + k) = n;
+      /* outer-j inner-k: hoist iv[j], cf[j] and amortize
+       * across ln bytes of contiguous buffer access */
+      for (k = 0; k < ln; ++k)
+        ovi[k] = 0;
+      for (j = 0; j < in; ++j) {
+        const unsigned char *ivj = *(iv + j);
+        unsigned char cfj = cf[j];
+
+        for (k = 0; k < ln; ++k)
+          ovi[k] ^= Cmt[ivj[k]][cfj];
       }
     }
   }

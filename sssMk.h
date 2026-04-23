@@ -26,6 +26,17 @@
  *
  * Arbitrary share count n (1..256), internally padded to next power of 2.
  * Proof size is ceil(log2(n)) hashes.
+ *
+ * Leaf hash:  H(0x00 || share_data)
+ * Node hash:  H(0x01 || left_child || right_child)
+ * Root hash:  H(0x02 || n_hi || n_lo || inner_root)
+ * The tag byte prefix prevents leaf/node/root confusion. The root commits
+ * to n: a proof valid for (i, n) is not valid for (i, n') when n != n',
+ * so shares cannot be replayed between trees of different sizes that
+ * happen to share a padded-tree structure.
+ *
+ * Caller should zero the tree work area when done; it retains leaf hashes
+ * H(0x00 || share) for every share.
  */
 
 /* Hash context for Merkle tree operations */
@@ -92,13 +103,15 @@ sssMkProof(
  ,unsigned int n                /* number of shares */
  ,unsigned int i                /* share index (0..n-1) */
  ,const unsigned char *w        /* work area (from sssMkHash) */
- ,unsigned char *p              /* proof output (sssMkPfSz) */
+ ,unsigned char *pf             /* proof output (sssMkPfSz) */
 );
 
 /*
  * Extract root hash from share and Merkle proof.
+ * n must equal the value passed to sssMkHash and sssMkProof.
  * Return pointer to root hash in work area, 0 on error.
- * Caller compares returned hash with expected root.
+ * Caller compares returned hash with expected root (use a constant-time
+ * compare if the comparison is security-sensitive).
  */
 unsigned char *
 sssMkExtract(
@@ -107,7 +120,7 @@ sssMkExtract(
  ,unsigned int l                /* share length */
  ,unsigned int i                /* share index */
  ,unsigned int n                /* total shares */
- ,const unsigned char *p        /* proof (sssMkPfSz) */
+ ,const unsigned char *pf       /* proof (sssMkPfSz) */
  ,unsigned char *w              /* work area (sssMkVfSz) */
 );
 

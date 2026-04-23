@@ -14,10 +14,10 @@ sssMk.o: sssMk.c sssMk.h
 main: test/main.c sss.h sss.o
 	$(CC) $(CFLAGS) -o main test/main.c sss.o
 
-sssMkTest: test/sssMkTest.c sss.h sssMk.h sss.o sssMk.o ../rmd128/rmd128.o
-	$(CC) $(CFLAGS) -I../rmd128 -o sssMkTest test/sssMkTest.c sss.o sssMk.o ../rmd128/rmd128.o
+sssMkTest: test/sssMkTest.c sss.h sssMk.h sss.o sssMk.o ../rmd128/rmd128.o ../sha256/sha256.o
+	$(CC) $(CFLAGS) -I../rmd128 -I../sha256 -o sssMkTest test/sssMkTest.c sss.o sssMk.o ../rmd128/rmd128.o ../sha256/sha256.o
 
-check: main
+check: main sssMkTest
 	./main 0-COPYING 1-test/r1 2-test/r2 3+s1 4+s2 5+s3 6+s4
 	./main 3-s1 4-s2 5-s3 6-s4 1-test/r1 2-test/r2 0+tst
 	cmp COPYING tst
@@ -33,3 +33,4 @@ check: main
 	cmp COPYING tst
 	./main 6-s4 3-s1 4-s2 0+tst
 	cmp COPYING tst
+	./sssMkTest

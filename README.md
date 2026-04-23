@@ -11,6 +11,8 @@ This is a thread safe C library version of [David Madore](http://www.madore.org/
 
 The hash function is pluggable via `sssMkHsh_t`, which provides allocate, initialize, update, finalize, and deallocate callbacks plus a hash size parameter h (hash is 2^h bytes).
 
+The root hash commits to `n` (share count) so proofs cannot be replayed between trees of different sizes. Tag-byte domain separation is used: leaves are `H(0x00 || share)`, internal nodes are `H(0x01 || L || R)`, and the root is `H(0x02 || n_hi || n_lo || inner_root)`.
+
 ### Build Tree
 
 ```c
@@ -33,7 +35,7 @@ unsigned char *sssMkProof(
   unsigned int n,                 /* number of shares */
   unsigned int i,                 /* share index (0..n-1) */
   const unsigned char *w,         /* work area (from sssMkHash) */
-  unsigned char *p                /* proof output (sssMkPfSz bytes) */
+  unsigned char *pf               /* proof output (sssMkPfSz bytes) */
 );
 ```
 
@@ -48,12 +50,12 @@ unsigned char *sssMkExtract(
   unsigned int l,                 /* share length */
   unsigned int i,                 /* share index */
   unsigned int n,                 /* total shares */
-  const unsigned char *p,         /* proof (sssMkPfSz bytes) */
+  const unsigned char *pf,        /* proof (sssMkPfSz bytes) */
   unsigned char *w                /* work area (sssMkVfSz bytes) */
 );
 ```
 
-Returns pointer to computed root hash in work area, 0 on error. Caller compares returned hash with expected root.
+Returns pointer to computed root hash in work area, 0 on error. Caller compares returned hash with the expected root — use a constant-time compare if the comparison is security-sensitive.
 
 ### Size Functions
 

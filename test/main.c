@@ -135,8 +135,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/stat.h>
 #include "sss.h"
 
@@ -181,13 +183,14 @@ main(
         error("Point value too large.");
     }
     if (argv[k][l] == '-') {
-      unsigned int s;
+      off_t s;
+      unsigned int u;
       int f;
 
       if (in > 255)
         error("Too many input points.");
-      for (s = 0; s < in; ++s)
-        if (*(ip + s) == p)
+      for (u = 0; u < in; ++u)
+        if (*(ip + u) == p)
           error("Duplicate input point.");
       if (!(v = realloc(ip, (in + 1) * sizeof (*ip))))
         error("realloc.");
@@ -198,15 +201,19 @@ main(
       iv = v;
       if ((f = open(argv[k] + l + 1, O_RDONLY)) < 0)
         error("Failed to open input file.");
-      s = lseek(f, 0, SEEK_END);
+      if ((s = lseek(f, 0, SEEK_END)) < 0)
+        error("lseek.");
+      if ((unsigned long)s > (unsigned long)UINT_MAX)
+        error("Input file too large.");
       if (!ln)
-        ln = s;
-      else if (ln > s)
+        ln = (unsigned int)s;
+      else if ((unsigned long)ln > (unsigned long)s)
         error("an input file is too small.");
       if (!(*(iv + in) = malloc(ln)))
         error("malloc.");
-      lseek(f, 0, SEEK_SET);
-      if (read(f, *(iv + in), ln) != ln)
+      if (lseek(f, 0, SEEK_SET) < 0)
+        error("lseek.");
+      if (read(f, *(iv + in), ln) != (ssize_t)ln)
         error("read.");
       close(f);
       ++in;
@@ -242,7 +249,7 @@ main(
 
     if ((p = open(*(of + k), O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0)
       error("Failed to open output file.");
-    if (write(p, *(ov + k), ln) != ln)
+    if (write(p, *(ov + k), ln) != (ssize_t)ln)
       error("write.");
     close(p);
   }
