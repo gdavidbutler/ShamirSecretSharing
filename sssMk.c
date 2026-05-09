@@ -18,6 +18,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/* Generated with Claude Code (https://claude.ai/code) */
+
 #include "sssMk.h"
 
 /* Domain separation tags: distinguish leaf, internal-node and root hash
