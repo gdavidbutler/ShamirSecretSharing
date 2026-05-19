@@ -63,12 +63,7 @@ Returns pointer to computed root hash in work area, 0 on error. Caller compares 
 - `sssMkPfSz(h, n)` - proof size per share
 - `sssMkVfSz(h)` - work area for verification
 
-## thrDsp Adapter
-
-`thrDspSss.[hc]` exposes `sss` + `sssMk` through the threshold-dispersal plugin contract `thrDsp.h` defined in `../asynchronousByzantineAgreementProtocols/` and consumed by that repo's `ct04Dsp` (CT04 AVID-H verifiable information dispersal). The dependency points one way — the adapter includes ABAP's `thrDsp.h` at build time; ABAP has no link-time dependency on this repo beyond the built `thrDspSss.o`. Note that `sss()` encode is non-deterministic (fresh randomness per call), so callers needing a reconstructed share for a given index must use `derivedRoot`'s `piece` output rather than decode-then-encode; the contract is designed around this.
-
 ## Examples
 
 * test/main.c - [David Madore](http://www.madore.org/~david/)'s command line interface to the library
 * test/sssMkTest.c - Merkle tree authentication test
-* test/thrDspSssTest.c - thrDsp plugin contract test against the SSS adapter
