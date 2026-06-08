@@ -29,16 +29,19 @@
  * Arbitrary share count n (1..256), internally padded to next power of 2.
  * Proof size is ceil(log2(n)) hashes.
  *
- * Leaf hash:  H(0x00 || share_data)
+ * Leaf hash:  H(0x00 || ocp || share_data)
  * Node hash:  H(0x01 || left_child || right_child)
- * Root hash:  H(0x02 || n_hi || n_lo || inner_root)
- * The tag byte prefix prevents leaf/node/root confusion. The root commits
- * to n: a proof valid for (i, n) is not valid for (i, n') when n != n',
- * so shares cannot be replayed between trees of different sizes that
+ * Root hash:  H(0x02 || scp || n_hi || n_lo || inner_root)
+ * The tag byte prefix prevents leaf/node/root confusion. The leaf binds
+ * each share to its output code point (ocp), so a share value cannot be
+ * replayed under a different code point. The root binds the secret code
+ * point (scp) and the share count n: a proof valid for (i, n, scp) is not
+ * valid for (i, n', scp') when n != n' or scp != scp', so shares cannot be
+ * replayed between trees of different sizes or different secret points that
  * happen to share a padded-tree structure.
  *
  * Caller should zero the tree work area when done; it retains leaf hashes
- * H(0x00 || share) for every share.
+ * H(0x00 || ocp || share) for every share.
  */
 
 /* Hash context for Merkle tree operations */
@@ -89,6 +92,8 @@ sssMkVfSz(
 unsigned char *
 sssMkHash(
   const sssMkHsh_t *h
+ ,unsigned char scp             /* secret code point (bound at root) */
+ ,const unsigned char *op       /* n output code points (op[i] bound in leaf i) */
  ,const unsigned char *const *s /* n share data pointers */
  ,unsigned int l                /* share length in bytes */
  ,unsigned int n                /* number of shares (1..256) */
@@ -118,6 +123,8 @@ sssMkProof(
 unsigned char *
 sssMkExtract(
   const sssMkHsh_t *h
+ ,unsigned char scp             /* secret code point (must match sssMkHash) */
+ ,unsigned char ocp             /* this share's output code point */
  ,const unsigned char *s        /* share data */
  ,unsigned int l                /* share length */
  ,unsigned int i                /* share index */

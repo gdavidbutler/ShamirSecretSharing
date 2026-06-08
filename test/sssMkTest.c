@@ -44,8 +44,9 @@ sha256Allocate(
 
 /* Parametric test over (hash vtable, share count).
  * Builds a tree of n synthetic shares, verifies every share, then runs
- * four negative tests: bit-flip corruption, wrong-index substitution,
- * wrong-n substitution (larger), wrong-n substitution (smaller when valid).
+ * six negative tests: bit-flip corruption, wrong-index substitution,
+ * wrong-n substitution (larger), wrong-n substitution (smaller when valid),
+ * wrong-ocp substitution (relabel), wrong-scp substitution.
  * Returns 0 on success, non-zero on any failure. */
 static int
 parametricTest(
@@ -67,9 +68,12 @@ parametricTest(
   unsigned char *savedRoot;
   unsigned char *vWork;
   unsigned char *extracted;
+  unsigned char op[256];
+  unsigned char scp;
   int fail;
 
   fail = 0;
+  scp = 0x5a;
   b = 1U << h->h;
   waSz = sssMkWaSz(h->h, n);
   pfSz = sssMkPfSz(h->h, n);
@@ -99,11 +103,12 @@ parametricTest(
     }
     for (j = 0; j < ShareLen; ++j)
       shares[i][j] = (unsigned char)((i * 37 + j) & 0xff);
+    op[i] = (unsigned char)i;
     cShares[i] = shares[i];
   }
 
   /* build tree */
-  root = sssMkHash(h, cShares, ShareLen, n, work);
+  root = sssMkHash(h, scp, op, cShares, ShareLen, n, work);
   if (!root) {
     printf("  sssMkHash: FAIL\n");
     fail = 1;
@@ -118,7 +123,7 @@ parametricTest(
       fail = 1;
       goto cleanup;
     }
-    extracted = sssMkExtract(h, cShares[i], ShareLen, i, n, proofs[i], vWork);
+    extracted = sssMkExtract(h, scp, op[i], cShares[i], ShareLen, i, n, proofs[i], vWork);
     if (!extracted || memcmp(extracted, savedRoot, b) != 0) {
       printf("  verify[%u]: FAIL\n", i);
       fail = 1;
@@ -129,7 +134,7 @@ parametricTest(
 
   /* negative: bit-flip corruption */
   shares[0][0] ^= 0xff;
-  extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n, proofs[0], vWork);
+  extracted = sssMkExtract(h, scp, op[0], cShares[0], ShareLen, 0, n, proofs[0], vWork);
   if (extracted && memcmp(extracted, savedRoot, b) == 0) {
     printf("  corruption rejection: FAIL (accepted corrupted share)\n");
     fail = 1;
@@ -139,7 +144,7 @@ parametricTest(
 
   /* negative: wrong index (only meaningful when n > 1) */
   if (n > 1) {
-    extracted = sssMkExtract(h, cShares[0], ShareLen, 1, n, proofs[0], vWork);
+    extracted = sssMkExtract(h, scp, op[0], cShares[0], ShareLen, 1, n, proofs[0], vWork);
     if (extracted && memcmp(extracted, savedRoot, b) == 0) {
       printf("  wrong-index rejection: FAIL\n");
       fail = 1;
@@ -150,7 +155,7 @@ parametricTest(
   /* negative: wrong n (larger). the verifier thinks tree has n+1 shares;
    * the recomputed root must differ because n is bound at the root. */
   if (n < 256) {
-    extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n + 1, proofs[0], vWork);
+    extracted = sssMkExtract(h, scp, op[0], cShares[0], ShareLen, 0, n + 1, proofs[0], vWork);
     if (extracted && memcmp(extracted, savedRoot, b) == 0) {
       printf("  wrong-n(+1) rejection: FAIL\n");
       fail = 1;
@@ -161,7 +166,7 @@ parametricTest(
   /* negative: wrong n (smaller, same padded size). important case:
    * without n-binding, n=3 and n=4 would produce identical walks for i<3. */
   if (n > 1) {
-    extracted = sssMkExtract(h, cShares[0], ShareLen, 0, n - 1, proofs[0], vWork);
+    extracted = sssMkExtract(h, scp, op[0], cShares[0], ShareLen, 0, n - 1, proofs[0], vWork);
     if (extracted && memcmp(extracted, savedRoot, b) == 0) {
       printf("  wrong-n(-1) rejection: FAIL\n");
       fail = 1;
@@ -169,13 +174,34 @@ parametricTest(
       printf("  wrong-n(-1) rejection: PASS\n");
   }
 
+  /* negative: wrong ocp (relabel). same value and index, different code
+   * point -- the leaf binds ocp, so the recomputed root must differ. */
+  extracted = sssMkExtract(h, scp, (unsigned char)(op[0] ^ 0xff),
+   cShares[0], ShareLen, 0, n, proofs[0], vWork);
+  if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+    printf("  wrong-ocp rejection: FAIL\n");
+    fail = 1;
+  } else
+    printf("  wrong-ocp rejection: PASS\n");
+
+  /* negative: wrong scp. scp is bound at the root, so a different secret
+   * code point must yield a different root. */
+  extracted = sssMkExtract(h, (unsigned char)(scp ^ 0xff), op[0],
+   cShares[0], ShareLen, 0, n, proofs[0], vWork);
+  if (extracted && memcmp(extracted, savedRoot, b) == 0) {
+    printf("  wrong-scp rejection: FAIL\n");
+    fail = 1;
+  } else
+    printf("  wrong-scp rejection: PASS\n");
+
   /* null-argument guards */
-  if (sssMkHash(0, cShares, ShareLen, n, work)
-   || sssMkHash(h, 0, ShareLen, n, work)
-   || sssMkHash(h, cShares, 0, n, work)
-   || sssMkHash(h, cShares, ShareLen, 0, work)
-   || sssMkHash(h, cShares, ShareLen, 257, work)
-   || sssMkHash(h, cShares, ShareLen, n, 0)) {
+  if (sssMkHash(0, scp, op, cShares, ShareLen, n, work)
+   || sssMkHash(h, scp, 0, cShares, ShareLen, n, work)
+   || sssMkHash(h, scp, op, 0, ShareLen, n, work)
+   || sssMkHash(h, scp, op, cShares, 0, n, work)
+   || sssMkHash(h, scp, op, cShares, ShareLen, 0, work)
+   || sssMkHash(h, scp, op, cShares, ShareLen, 257, work)
+   || sssMkHash(h, scp, op, cShares, ShareLen, n, 0)) {
     printf("  Hash null-arg guards: FAIL\n");
     fail = 1;
   }
@@ -188,14 +214,14 @@ parametricTest(
     printf("  Proof null-arg guards: FAIL\n");
     fail = 1;
   }
-  if (sssMkExtract(0, shares[0], ShareLen, 0, n, proofs[0], vWork)
-   || sssMkExtract(h, 0, ShareLen, 0, n, proofs[0], vWork)
-   || sssMkExtract(h, shares[0], 0, 0, n, proofs[0], vWork)
-   || sssMkExtract(h, shares[0], ShareLen, n, n, proofs[0], vWork)
-   || sssMkExtract(h, shares[0], ShareLen, 0, 0, proofs[0], vWork)
-   || sssMkExtract(h, shares[0], ShareLen, 0, 257, proofs[0], vWork)
-   || sssMkExtract(h, shares[0], ShareLen, 0, n, 0, vWork)
-   || sssMkExtract(h, shares[0], ShareLen, 0, n, proofs[0], 0)) {
+  if (sssMkExtract(0, scp, op[0], shares[0], ShareLen, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], 0, ShareLen, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], 0, 0, n, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], ShareLen, n, n, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], ShareLen, 0, 0, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], ShareLen, 0, 257, proofs[0], vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], ShareLen, 0, n, 0, vWork)
+   || sssMkExtract(h, scp, op[0], shares[0], ShareLen, 0, n, proofs[0], 0)) {
     printf("  Extract null-arg guards: FAIL\n");
     fail = 1;
   }
@@ -351,7 +377,7 @@ main(
     fprintf(stderr, "malloc\n");
     return (1);
   }
-  root = sssMkHash(&Hrmd, cov, secretLen, N, mkWork);
+  root = sssMkHash(&Hrmd, ip[0], op, cov, secretLen, N, mkWork);
   if (!root) {
     fprintf(stderr, "sssMkHash\n");
     return (1);
@@ -378,7 +404,7 @@ main(
       fprintf(stderr, "sssMkProof %u\n", i);
       return (1);
     }
-    extracted = sssMkExtract(&Hrmd, cov[i], secretLen, i, N,
+    extracted = sssMkExtract(&Hrmd, ip[0], op[i], cov[i], secretLen, i, N,
      proofBuf[i], vfWork);
     if (!extracted
      || memcmp(extracted, root, 1U << Hrmd.h) != 0) {

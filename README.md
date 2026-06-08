@@ -11,13 +11,15 @@ This is a thread safe C library version of [David Madore](http://www.madore.org/
 
 The hash function is pluggable via `sssMkHsh_t`, which provides allocate, initialize, update, finalize, and deallocate callbacks plus a hash size parameter h (hash is 2^h bytes).
 
-The root hash commits to `n` (share count) so proofs cannot be replayed between trees of different sizes. Tag-byte domain separation is used: leaves are `H(0x00 || share)`, internal nodes are `H(0x01 || L || R)`, and the root is `H(0x02 || n_hi || n_lo || inner_root)`.
+The leaf binds each share to its output code point, and the root commits to the secret code point and `n` (share count), so proofs cannot be replayed under a different code point, between trees of different sizes, or between different secret points. Tag-byte domain separation is used: leaves are `H(0x00 || ocp || share)`, internal nodes are `H(0x01 || L || R)`, and the root is `H(0x02 || scp || n_hi || n_lo || inner_root)`.
 
 ### Build Tree
 
 ```c
 unsigned char *sssMkHash(
   const sssMkHsh_t *h,
+  unsigned char scp,              /* secret code point (bound at root) */
+  const unsigned char *op,        /* n output code points (op[i] in leaf i) */
   const unsigned char *const *s,  /* n share data pointers */
   unsigned int l,                 /* share length in bytes */
   unsigned int n,                 /* number of shares (1..256) */
@@ -46,6 +48,8 @@ Returns pointer past proof, 0 on error. Proof size is ceil(log2(n)) hashes.
 ```c
 unsigned char *sssMkExtract(
   const sssMkHsh_t *h,
+  unsigned char scp,              /* secret code point (must match sssMkHash) */
+  unsigned char ocp,              /* this share's output code point */
   const unsigned char *s,         /* share data */
   unsigned int l,                 /* share length */
   unsigned int i,                 /* share index */

@@ -24,9 +24,11 @@
 
 /* Domain separation tags: distinguish leaf, internal-node and root hash
  * inputs. Prefixing rules out leaf/node/root confusion from second-preimage
- * attacks. The root hash additionally commits to the share count n so
- * proofs cannot be replayed between trees of different sizes that share
- * the same padded-tree structure. */
+ * attacks. The leaf additionally binds the share's output code point (ocp)
+ * so a value cannot be replayed under a different code point. The root
+ * additionally commits to the secret code point (scp) and the share count
+ * n so proofs cannot be replayed between trees of different secret points
+ * or sizes that share the same padded-tree structure. */
 static const unsigned char LeafTag = 0x00;
 static const unsigned char NodeTag = 0x01;
 static const unsigned char RootTag = 0x02;
@@ -94,6 +96,8 @@ sssMkVfSz(
 unsigned char *
 sssMkHash(
   const sssMkHsh_t *h
+ ,unsigned char scp
+ ,const unsigned char *op
  ,const unsigned char *const *s
  ,unsigned int l
  ,unsigned int n
@@ -108,7 +112,7 @@ sssMkHash(
   unsigned char *cp;
   unsigned char nb[2];
 
-  if (!h || !s || !l || n < 1 || n > 256 || !w
+  if (!h || !op || !s || !l || n < 1 || n > 256 || !w
    || !h->a || !h->i || !h->u || !h->f)
     return (0);
   b = 1U << h->h;
@@ -116,11 +120,12 @@ sssMkHash(
   if (!(c = h->a()))
     return (0);
 
-  /* hash real share leaves with LeafTag prefix */
+  /* hash real share leaves: H(LeafTag || op[i] || share) */
   np = w + p * b;
   for (i = 0; i < n; ++i) {
     h->i(c);
     h->u(c, &LeafTag, 1);
+    h->u(c, &op[i], 1);
     h->u(c, s[i], l);
     h->f(c, np);
     np += b;
@@ -143,11 +148,12 @@ sssMkHash(
     cp -= b << 1;
   }
 
-  /* bind n to root: slot 0 = H(RootTag || n_hi || n_lo || tree[1]) */
+  /* bind scp and n to root: slot 0 = H(RootTag || scp || n_hi || n_lo || tree[1]) */
   nb[0] = (unsigned char)(n >> 8);
   nb[1] = (unsigned char)(n & 0xff);
   h->i(c);
   h->u(c, &RootTag, 1);
+  h->u(c, &scp, 1);
   h->u(c, nb, 2);
   h->u(c, w + b, b);
   h->f(c, w);
@@ -190,6 +196,8 @@ sssMkProof(
 unsigned char *
 sssMkExtract(
   const sssMkHsh_t *h
+ ,unsigned char scp
+ ,unsigned char ocp
  ,const unsigned char *s
  ,unsigned int l
  ,unsigned int i
@@ -216,9 +224,10 @@ sssMkExtract(
   if (!(c = h->a()))
     return (0);
 
-  /* hash share data with LeafTag to get leaf hash */
+  /* hash share data: leaf = H(LeafTag || ocp || share) */
   h->i(c);
   h->u(c, &LeafTag, 1);
+  h->u(c, &ocp, 1);
   h->u(c, s, l);
   h->f(c, cur);
 
@@ -239,11 +248,12 @@ sssMkExtract(
     node >>= 1;
   }
 
-  /* bind n: cur = H(RootTag || n_hi || n_lo || inner_root) */
+  /* bind scp and n: cur = H(RootTag || scp || n_hi || n_lo || inner_root) */
   nb[0] = (unsigned char)(n >> 8);
   nb[1] = (unsigned char)(n & 0xff);
   h->i(c);
   h->u(c, &RootTag, 1);
+  h->u(c, &scp, 1);
   h->u(c, nb, 2);
   h->u(c, cur, b);
   h->f(c, cur);
