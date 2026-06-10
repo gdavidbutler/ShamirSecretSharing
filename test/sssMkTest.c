@@ -58,6 +58,7 @@ parametricTest(
   unsigned int b;
   unsigned int waSz;
   unsigned int pfSz;
+  unsigned int pfAlloc;
   unsigned int i;
   unsigned int j;
   unsigned char **shares;
@@ -92,11 +93,14 @@ parametricTest(
     fprintf(stderr, "malloc\n");
     exit(1);
   }
+  /* proof buffers are sized for the largest n claimed against them:
+   * the wrong-n(+1) negative test below passes n + 1 to sssMkExtract,
+   * which reads sssMkPfSz bytes for the claimed n -- one more tree
+   * level than the true proof when n is a power of 2 */
+  pfAlloc = sssMkPfSz(h->h, n < 256 ? n + 1 : n);
   for (i = 0; i < n; ++i) {
     shares[i] = malloc(ShareLen);
-    /* allocate at least one byte so the library's null-pointer guard
-     * does not trip on the degenerate pfSz=0 case (n=1) */
-    proofs[i] = malloc(pfSz ? pfSz : 1);
+    proofs[i] = malloc(pfAlloc);
     if (!shares[i] || !proofs[i]) {
       fprintf(stderr, "malloc\n");
       exit(1);

@@ -116,6 +116,10 @@ sssMkProof(
 /*
  * Extract root hash from share and Merkle proof.
  * n must equal the value passed to sssMkHash and sssMkProof.
+ * pf is read for sssMkPfSz(h->h, n) bytes, derived from the n passed
+ * here, not from the tree that produced the proof. When (s, i, n, pf)
+ * arrive from an untrusted source, the caller must check the received
+ * proof is exactly sssMkPfSz(h->h, n) bytes before calling.
  * Return pointer to root hash in work area, 0 on error.
  * Caller compares returned hash with expected root (use a constant-time
  * compare if the comparison is security-sensitive).

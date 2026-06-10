@@ -44,6 +44,12 @@
  * + No dynamic memory allocation whatsoever (roughly 70k static).
  * + Completely brain-dead command line syntax. */
 
+/* [The /dev/urandom form below is not valid in the below
+ * implementation: input files are sized with lseek() and read whole,
+ * and /dev/urandom reports size 0.  Use the alternative also given
+ * below: write cryptographically strong random data to regular files
+ * the same size as the secret and name those as the '-' inputs.] */
+
 /* How to use:
  * To share a secret:
    shsecret -secret.txt 1-/dev/urandom 2-/dev/urandom [...] \
@@ -207,8 +213,8 @@ main(
         error("Input file too large.");
       if (!ln)
         ln = (unsigned int)s;
-      else if ((unsigned long)ln > (unsigned long)s)
-        error("an input file is too small.");
+      else if ((unsigned long)ln != (unsigned long)s)
+        error("input file size mismatch.");
       if (!(*(iv + in) = malloc(ln)))
         error("malloc.");
       if (lseek(f, 0, SEEK_SET) < 0)
