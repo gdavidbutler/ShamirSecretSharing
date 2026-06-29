@@ -149,8 +149,8 @@ sssMkHash(
   }
 
   /* bind scp and n to root: slot 0 = H(RootTag || scp || n_hi || n_lo || tree[1]) */
-  nb[0] = (unsigned char)(n >> 8);
-  nb[1] = (unsigned char)(n & 0xff);
+  nb[0] = (n >> 8);
+  nb[1] = (n & 0xff);
   h->i(c);
   h->u(c, &RootTag, 1);
   h->u(c, &scp, 1);
@@ -249,8 +249,8 @@ sssMkExtract(
   }
 
   /* bind scp and n: cur = H(RootTag || scp || n_hi || n_lo || inner_root) */
-  nb[0] = (unsigned char)(n >> 8);
-  nb[1] = (unsigned char)(n & 0xff);
+  nb[0] = (n >> 8);
+  nb[1] = (n & 0xff);
   h->i(c);
   h->u(c, &RootTag, 1);
   h->u(c, &scp, 1);
